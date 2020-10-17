@@ -18,5 +18,5 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println(m.GetRoot())
+	log.Println(m.GetPrivateTree("sha256"))
 }
