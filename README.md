@@ -12,3 +12,11 @@ The main.go uses the implemented merkle tree library to get the results asked in
 git clone git@github.com:rogercoll/merkletree.git
 go run cmd/main.go
 ```
+
+
+## Screenshot of the execution
+
+The membership proofs are performed with log(n) time. 
+
+![alt text](https://github.com/rogercoll/merkletree/blob/main/img/screenshot.png?raw=true)
+
