@@ -22,14 +22,22 @@ type node struct {
 type merkletree struct {
 	root     *node
 	leafs    *[]node
-	middle   *[]node
+	middle   map[int][]node
 	hashAlgo func() hash.Hash
+}
+
+func ReadFile(file string) ([]byte, error) {
+	dat, err := ioutil.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	return dat, nil
 }
 
 func readData(files []string) (*[][]byte, error) {
 	contents := make([][]byte, len(files))
 	for i, file := range files {
-		dat, err := ioutil.ReadFile(file)
+		dat, err := ReadFile(file)
 		if err != nil {
 			return nil, err
 		}
@@ -57,7 +65,7 @@ func computeMiddleNodes(nodes *[]node, m *merkletree, level int) (*node, error) 
 		if len(*nodes) == 2 {
 			return &newNode, nil
 		}
-		*m.middle = append(*m.middle, newNode)
+		(*m).middle[level] = append((*m).middle[level], newNode)
 	}
 	return computeMiddleNodes(&newlevel, m, level)
 }
@@ -81,7 +89,8 @@ func computeMerkleTree(data *[][]byte, hashAlgorithm func() hash.Hash) (*merklet
 		leafs = append(leafs, leafs[len(leafs)-1])
 	}
 	m.leafs = &leafs
-	m.middle = &[]node{}
+	middle := make(map[int][]node, len(leafs)/2-2)
+	m.middle = middle
 	var err error
 	m.root, err = computeMiddleNodes(&leafs, &m, 0)
 	if err != nil {
@@ -91,8 +100,8 @@ func computeMerkleTree(data *[][]byte, hashAlgorithm func() hash.Hash) (*merklet
 	return &m, nil
 }
 
-func (m *merkletree) GetRoot() (string, int) {
-	return hex.EncodeToString(m.root.content[:]), m.root.i
+func (m *merkletree) GetRoot() string {
+	return hex.EncodeToString(m.root.content[:])
 }
 
 func (m *merkletree) GetPrivateTree(hashName string) string {
@@ -100,10 +109,45 @@ func (m *merkletree) GetPrivateTree(hashName string) string {
 	for _, leaf := range *m.leafs {
 		output += strconv.Itoa(leaf.i) + ":" + strconv.Itoa(leaf.j) + ":" + hex.EncodeToString(leaf.content[:]) + "\n"
 	}
-	for _, middleNode := range *m.middle {
-		output += strconv.Itoa(middleNode.i) + ":" + strconv.Itoa(middleNode.j) + ":" + hex.EncodeToString(middleNode.content[:]) + "\n"
+	for iter := 1; iter < m.root.i; iter++ {
+		for _, node := range (*m).middle[iter] {
+			output += strconv.Itoa(node.i) + ":" + strconv.Itoa(node.j) + ":" + hex.EncodeToString(node.content[:]) + "\n"
+		}
 	}
 	return output[:len(output)-1]
+}
+
+func (m *merkletree) proof(data []byte, level, col int) []byte {
+	if level == m.root.i {
+		return data
+	}
+	if level == 0 {
+		pleafs := (*m).leafs
+		if col%2 == 0 {
+			data = append(data, (*pleafs)[col+1].content[:]...)
+		} else {
+			data = append((*pleafs)[col-1].content[:], data...)
+		}
+	} else {
+		if col%2 == 0 {
+			data = append(data, (*m).middle[level][col+1].content[:]...)
+		} else {
+			data = append((*m).middle[level][col-1].content[:], data...)
+		}
+	}
+	hash := m.hashAlgo()
+	hash.Write(data)
+	nodeHash := hash.Sum(nil)
+	level++
+	return m.proof(nodeHash, level, col/2)
+}
+
+func (m *merkletree) ProofMembership(data []byte, leaf int) string {
+	hash := m.hashAlgo()
+	hash.Write(data)
+	nodeHash := hash.Sum(nil)
+	tmpRoot := m.proof(nodeHash, 0, leaf)
+	return hex.EncodeToString(tmpRoot[:])
 }
 
 func Build(files []string, hashAlgorithm func() hash.Hash) (*merkletree, error) {
